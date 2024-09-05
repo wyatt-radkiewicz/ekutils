@@ -22,18 +22,19 @@ make utils && ./build/test
 To test the utility library
 
 ## What features will be in ekutils?
-- [ ] string views
+- [x] string views
 - [ ] dynamic string buffers
 - [ ] generic allocation interface
 - [ ] pool allocater
 - [ ] arena allocater
 - [ ] better format strings
-- [ ] deadass simple logging library
-- [ ] vectors
+- [x] deadass simple logging library
+- [x] vectors
 - [ ] robin-hood hash maps
 - [ ] string hash function
 - [ ] toml parser
 - [ ] json parser
+- [x] simple testing framework
 
 ## License
 [GLWTSPL](/LICENSE)

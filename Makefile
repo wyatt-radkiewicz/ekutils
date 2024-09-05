@@ -3,13 +3,13 @@
 #
 
 # Variables
-SRCS	:=$(shell find src/test/ -name "*.c")
+SRCS	:=$(shell find src/ -name "*.c")
 BUILD	:=build
 OUT	:=$(BUILD)/test
 OBJS	:=$(patsubst %.c,$(BUILD)/%.o,$(SRCS))
 
 # Environment variables
-CFLAGS	:=$(CFLAGS) -O0 -g -std=c99
+CFLAGS	:=$(CFLAGS) -DEK_FEATURE_OFF=1 -O0 -g -std=gnu99
 LDFLAGS	:=$(LDFLAGS) -lm
 
 # Build the main executable
