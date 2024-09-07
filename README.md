@@ -30,7 +30,7 @@ To test the utility library
 - [ ] better format strings
 - [x] deadass simple logging library
 - [x] vectors
-- [ ] robin-hood hash maps
+- [x] robin-hood hash maps
 - [ ] string hash function
 - [ ] toml parser
 - [ ] json parser
