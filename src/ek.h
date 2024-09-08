@@ -34,6 +34,9 @@
 #ifndef EK_USE_ARENA
 #	define EK_USE_ARENA EK_FEATURE_OFF
 #endif
+#ifndef EK_USE_POOL
+#	define EK_USE_POOL EK_FEATURE_OFF
+#endif
 #ifndef EK_USE_STRBUF
 #	define EK_USE_STRBUF EK_FEATURE_OFF
 #endif
@@ -171,20 +174,15 @@ static inline bool strview_eq(const strview_t *const restrict lhs,
 // the until the length of the string view or the length of the buffer anyways.
 size_t strview_buf_str(char *str, size_t len, const strview_t *const view);
 
+static inline strview_t str_to_strview(const char *str) {
+	return (strview_t){ .str = str, .len = strlen(str) };
+}
+
 #define STRVIEW_TO_STR_TMP_MAX 1024
 
 // Will allocate a temporary buffer on the data segment for the string view will a
 // null terminator. Will only be there until another call to strview_to_str_cmp
 const char *strview_as_str(const strview_t *const view);
-#endif
-
-//
-// EK_USE_STRBUF
-//
-#if EK_USE_STRBUF
-
-//typedef struct 
-
 #endif
 
 //
@@ -338,6 +336,41 @@ static inline size_t vec_capacity(const void *data) {
 #endif
 
 //
+// EK_USE_STRBUF
+//
+#if EK_USE_STRBUF
+#if !EK_USE_VEC
+#	error ek.h: to use string buffers, enable vector library
+#endif
+
+char *strbuf_init(mem_alloc_t fn, size_t initial_capacity) {
+	char *s = vec_init(fn, 1, initial_capacity);
+	if (!s) return NULL;
+	vec_push(s, 1, &(char){ '\0' });
+	return s;
+}
+char *strbuf_cpy(char *sb, const strview_t *sv) {
+	*vec_len(sb) = 0;
+	if (!(sb = vec_push(sb, sv->len, sv->str))) return NULL;
+	return vec_push(sb, 1, &(char){ '\0' });
+}
+char *strbuf_from_sv(mem_alloc_t fn, const strview_t *sv) {
+	char *sb = vec_init(fn, 1, sv->len + 1);
+	if (!sb) return NULL;
+	return strbuf_cpy(sb, sv);
+}
+char *strbuf_svcat(char *sb, const strview_t *sv) {
+	vec_pop(sb, 1, NULL);
+	if (!(sb = vec_push(sb, sv->len, NULL))) return NULL;
+	return vec_push(sb, 1, &(char){ '\0' });
+}
+static inline strview_t strbuf_to_strview(char *sb) {
+	return (strview_t){ .str = sb, .len = *vec_len(sb) };
+}
+
+#endif
+
+//
 // EK_USE_HASH
 //
 #if EK_USE_HASH
@@ -396,7 +429,31 @@ uint64_t strview_hash(const strview_t *sv);
 
 bool fixed_arena_init(void *buf, size_t bufsize);
 void *fixed_arena_alloc(void *buf, size_t size);
+void fixed_arena_reset_to(void *buf, void *to);
 mem_alloc_t fixed_arena_alloc_fn(void *buf);
+
+#endif
+
+//
+// EK_USE_POOL
+//
+#if EK_USE_POOL
+
+typedef struct dynpool dynpool_t;
+
+dynpool_t *dynpool_init(mem_alloc_t alloc, size_t initial_chunks, size_t elemsz);
+void dynpool_deinit(dynpool_t *self);
+void *dynpool_alloc(dynpool_t *self);
+void dynpool_free(dynpool_t *self, void *ptr);
+bool dynpool_empty(const dynpool_t *self);
+void dynpool_fast_clear(dynpool_t *self);
+size_t dynpool_num_chunks(const dynpool_t *self);
+
+void fixedpool_init(void *buf, size_t elemsz, size_t buflen);
+void fixedpool_fast_clear(void *buf);
+void *fixedpool_alloc(void *buf);
+void fixedpool_free(void *buf, void *blk);
+bool fixedpool_empty(const void *buf);
 
 #endif
 

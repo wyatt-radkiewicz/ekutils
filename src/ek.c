@@ -113,7 +113,10 @@ void *vec_push(void *data, size_t nelems, const void *elems) {
 		if (!vec) return NULL;
 	}
 
-	memcpy(vec->data + vec->len * vec->elem_size, elems, nelems * vec->elem_size);
+	if (elems) {
+		memcpy(vec->data + vec->len * vec->elem_size,
+			elems, nelems * vec->elem_size);
+	}
 	vec->len += nelems;
 	return vec->data;
 }
@@ -427,8 +430,222 @@ void *fixed_arena_alloc(void *buf, size_t size) {
 	arena->ptr = (uint8_t *)align_dn((uintptr_t)arena->ptr - size, 8);
 	return arena->ptr >= arena->data ? arena->ptr : NULL;
 }
+void fixed_arena_reset_to(void *buf, void *to) {
+	((fixed_arena_t *)buf)->ptr = to;
+}
 mem_alloc_t fixed_arena_alloc_fn(void *buf) {
 	return &((fixed_arena_t *)buf)->alloc_fn;
+}
+
+#endif
+
+#if EK_USE_POOL
+
+typedef struct dynpool_block dynpool_block_t;
+typedef struct dynpool_chunk {
+	union {
+		dynpool_block_t *parent;
+		struct dynpool_chunk *nextfree;
+	};
+	uint8_t data[];
+} dynpool_chunk_t;
+
+struct dynpool_block {
+	dynpool_block_t *next, *nextfree, *lastfree;
+	size_t nchunks, freeid, elemsz, nalloced;
+	dynpool_chunk_t *free;
+	uint8_t data[];
+};
+
+struct dynpool {
+	mem_alloc_fn *interface;
+	size_t elemsz;
+	mem_alloc_t alloc;
+	dynpool_block_t *head, *free;
+	dynpool_block_t first;
+};
+
+dynpool_t *dynpool_init(mem_alloc_t alloc, size_t initial_chunks, size_t elemsz) {
+	elemsz = align_up(elemsz, sizeof(dynpool_chunk_t)) + sizeof(dynpool_chunk_t);
+	dynpool_t *self = mem_alloc(alloc, NULL, sizeof(*self) + sizeof(dynpool_block_t)
+					+ initial_chunks * elemsz);
+	*self = (struct dynpool){
+		.elemsz = elemsz,
+		.alloc = alloc,
+		.head = &self->first,
+		.free = &self->first,
+		.first = (dynpool_block_t){
+			.elemsz = elemsz,
+			.nchunks = initial_chunks,
+			.next = NULL,
+			.nextfree = NULL,
+			.lastfree = NULL,
+			.free = NULL,
+			.freeid = 0,
+			.nalloced = 0,
+		},
+	};
+
+	return self;
+}
+void dynpool_deinit(dynpool_t *self) {
+	dynpool_block_t *blk = self->head;
+	while (blk) {
+		dynpool_block_t *next = blk->next;
+		if (blk != &self->first) mem_alloc(self->alloc, blk, 0);
+		blk = next;
+	}
+	mem_alloc(self->alloc, self, 0);
+}
+static void remove_free_block(dynpool_t *self, dynpool_block_t *blk) {
+	if (blk->lastfree) blk->lastfree->nextfree = blk->nextfree;
+	else self->free = blk->nextfree;
+	if (blk->nextfree) blk->nextfree->lastfree = blk->lastfree;
+}
+void *dynpool_alloc(dynpool_t *self) {
+	if (!self->free) {
+		dynpool_block_t *blk = mem_alloc(self->alloc, NULL,
+				sizeof(*blk) + self->head->nchunks * self->elemsz);
+		*blk = (dynpool_block_t){
+			.elemsz = self->elemsz,
+			.nchunks = self->head->nchunks,
+			.next = self->head,
+			.nextfree = NULL,
+			.lastfree = NULL,
+			.free = NULL,
+			.freeid = 0,
+			.nalloced = 0,
+		};
+		self->head = blk;
+		self->free = blk;
+	}
+
+	dynpool_block_t *blk = self->free;
+	dynpool_chunk_t *chunk;
+	if (blk->freeid != blk->nchunks) {
+		chunk = (dynpool_chunk_t *)(blk->data + (blk->freeid++ * blk->elemsz));
+	} else {
+		chunk = blk->free;
+		blk->free = chunk->nextfree;
+	}
+	chunk->parent = blk;
+	if (++blk->nalloced == blk->nchunks) remove_free_block(self, blk);
+	return chunk->data;
+}
+void dynpool_free(dynpool_t *self, void *ptr) {
+	if (!ptr) {
+		return;
+	}
+	dynpool_chunk_t *chunk = (dynpool_chunk_t *)((uintptr_t)ptr - offsetof(dynpool_chunk_t, data));
+	dynpool_block_t *blk = chunk->parent;
+	if (blk->nalloced-- == blk->nchunks) {
+		blk->lastfree = NULL;
+		blk->nextfree = self->free;
+		if (blk->nextfree) blk->nextfree->lastfree = blk;
+		self->free = blk;
+	}
+
+	chunk->nextfree = blk->free;
+	blk->free = chunk;
+}
+bool dynpool_empty(const dynpool_t *self) {
+	size_t free_blocks = 0, nblocks = 0;
+	
+	const dynpool_block_t *blk = self->head;
+	while (blk) {
+		nblocks++;
+		blk = blk->next;
+	}
+
+	blk = self->free;
+	while (blk) {
+		if (blk->nalloced != 0) return false;
+		free_blocks++;
+		blk = blk->nextfree;
+	}
+
+	return free_blocks == nblocks;
+}
+void dynpool_fast_clear(dynpool_t *self) {
+	dynpool_block_t *blk = self->head;
+	self->free = NULL;
+	while (blk) {
+		blk->nalloced = 0;
+		blk->free = NULL;
+		blk->freeid = 0;
+		
+		blk->lastfree = NULL;
+		blk->nextfree = self->free;
+		if (blk->nextfree) blk->nextfree->lastfree = blk;
+		self->free = blk;
+
+		blk = blk->next;
+	}
+}
+size_t dynpool_num_chunks(const dynpool_t *self) {
+	size_t nchunks = 0;
+	dynpool_block_t *blk = self->head;
+	while (blk) {
+		nchunks += blk->nalloced;
+		blk = blk->next;
+	}
+	return nchunks;
+}
+
+typedef struct fixedpool_chunk {
+	struct fixedpool_chunk *next;
+} fixedpool_chunk_t;
+
+typedef struct fixedpool {
+	size_t nchunks, freeid, elemsz;
+	fixedpool_chunk_t *free;
+	uint8_t data[];
+} fixedpool_t;
+
+void fixedpool_init(void *buf, size_t elemsz, size_t buflen) {
+	fixedpool_t *self = buf;
+
+	elemsz = align_up(elemsz, sizeof(fixedpool_chunk_t)) + sizeof(fixedpool_chunk_t);
+	self->nchunks = (buflen - sizeof(*self)) / elemsz;
+	self->free = NULL;
+	self->freeid = 0;
+	self->elemsz = elemsz;
+}
+void fixedpool_fast_clear(void *buf) {
+	fixedpool_t *self = buf;
+
+	self->freeid = 0;
+	self->free = NULL;
+}
+void *fixedpool_alloc(void *buf) {
+	fixedpool_t *self = buf;
+
+	if (self->freeid != self->nchunks) {
+		return self->data + self->elemsz*(self->freeid++);
+	}
+	if (!self->free) return NULL;
+	void *ptr = self->free;
+	self->free = self->free->next;
+	return ptr;
+}
+void fixedpool_free(void *buf, void *blk) {
+	fixedpool_t *self = buf;
+
+	if (!blk) return;
+	((fixedpool_chunk_t *)blk)->next = self->free;
+	self->free = blk;
+}
+bool fixedpool_empty(const void *buf) {
+	const fixedpool_t *self = buf;
+
+	if (self->freeid == 0) return 1;
+	size_t nfree = 0;
+	fixedpool_chunk_t *chunk = self->free;
+	while (chunk) {
+		nfree++;
+		chunk = chunk->next;
+	}
+	return nfree == self->nchunks;
 }
 
 #endif

@@ -23,9 +23,9 @@ To test the utility library
 
 ## What features will be in ekutils?
 - [x] string views
-- [ ] dynamic string buffers
+- [x] dynamic string buffers
 - [x] generic allocation interface
-- [ ] pool allocater
+- [x] pool allocater
 - [x] arena allocater
 - [x] deadass simple logging library
 - [x] vectors
