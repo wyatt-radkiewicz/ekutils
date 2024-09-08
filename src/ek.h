@@ -199,7 +199,7 @@ static inline int utf32_to_utf8_len(const uint32_t c) {
 	else if (c < 0x10000) return 3;
 	else return 4;
 }
-static uint32_t utf8_decode(const uint8_t *buf) {
+static uint32_t utf8_codepoint_decode(const uint8_t *buf) {
 	uint32_t out;
 
 	switch (utf8_codepoint_len(*buf)) {
@@ -225,7 +225,7 @@ static uint32_t utf8_decode(const uint8_t *buf) {
 
 	return out;
 }
-static void utf8_encode(const uint32_t c, uint8_t *buf) {
+static void utf8_codepoint_encode(const uint32_t c, uint8_t *buf) {
 	switch (utf32_to_utf8_len(c)) {
 	case 1:
 		*buf++ = c;
