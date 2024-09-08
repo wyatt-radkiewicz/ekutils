@@ -10,26 +10,43 @@
 
 
 // Change EK_FEATURE_OFF to 1 if you want to use the feature
-#define EK_USE_UTIL EK_FEATURE_OFF
-#define EK_USE_STRVIEW EK_FEATURE_OFF
-#define EK_USE_LOG EK_FEATURE_OFF
-#define EK_USE_VEC EK_FEATURE_OFF
-#define EK_USE_UTF8 EK_FEATURE_OFF
-#define EK_USE_TEST EK_FEATURE_OFF
-#define EK_USE_HASH EK_FEATURE_OFF
+#ifndef EK_USE_UTIL
+#	define EK_USE_UTIL EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_STRVIEW
+#	define EK_USE_STRVIEW EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_LOG
+#	define EK_USE_LOG EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_VEC
+#	define EK_USE_VEC EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_UTF8
+#	define EK_USE_UTF8 EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_TEST
+#	define EK_USE_TEST EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_HASH
+#	define EK_USE_HASH EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_ARENA
+#	define EK_USE_ARENA EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_STRBUF
+#	define EK_USE_STRBUF EK_FEATURE_OFF
+#endif
 
 //
 // standard library includes
 //
-#if EK_USE_STRVIEW
-#	include <stdbool.h>
+#include <stddef.h>
+#if EK_USE_STRVIEW || EK_USE_STRBUF
 #	include <string.h>
 #endif
 #if EK_USE_LOG
 #	include <stdarg.h>
-#endif
-#if EK_USE_STRVIEW || EK_USE_VEC
-#	include <stddef.h>
 #endif
 #if EK_USE_UTF8 || EK_USE_VEC || EK_USE_HASH
 #	include <stdint.h>
@@ -37,6 +54,17 @@
 #if EK_USE_TEST
 #	include <stdio.h>
 #endif
+#if EK_USE_STRVIEW || EK_USE_HASH
+#	include <stdbool.h>
+#endif
+
+// Allocation interface
+typedef void *(mem_alloc_fn)(void *usr, void *blk, size_t size);
+typedef mem_alloc_fn *const *mem_alloc_t;
+void *mem_alloc(mem_alloc_t fn, void *blk, size_t size) {
+	if (!fn) return NULL;
+	return (*fn)((void *)fn, blk, size);
+}
 
 //
 // Always included in ek.h.
@@ -44,9 +72,15 @@
 // These are meant if you need general purpose allocation.
 // There are also general purpose allocation interfaces for runtime
 //
-#define EK_MALLOC malloc
-#define EK_REALLOC realloc
-#define EK_FREE free
+#ifndef EK_MALLOC
+#	define EK_USE_STDLIB_MALLOC 1
+mem_alloc_t mem_stdlib_alloc(void);
+
+#ifndef NDEBUG
+size_t mem_stdlib_allocated_bytes(void);
+#endif
+
+#endif
 
 //
 // EK_USE_UTIL
@@ -142,6 +176,15 @@ size_t strview_buf_str(char *str, size_t len, const strview_t *const view);
 // Will allocate a temporary buffer on the data segment for the string view will a
 // null terminator. Will only be there until another call to strview_to_str_cmp
 const char *strview_as_str(const strview_t *const view);
+#endif
+
+//
+// EK_USE_STRBUF
+//
+#if EK_USE_STRBUF
+
+//typedef struct 
+
 #endif
 
 //
@@ -269,6 +312,7 @@ void _logerr(const char *msg, ...);
 //
 #if EK_USE_VEC
 typedef struct vec {
+	mem_alloc_t alloc;
 	size_t len;
 	size_t capacity;
 	size_t elem_size;
@@ -276,7 +320,7 @@ typedef struct vec {
 } vec_t;
 
 // Returns a pointer starting at the data part
-void *vec_init(size_t elem_size, size_t capacity);
+void *vec_init(mem_alloc_t alloc, size_t elem_size, size_t capacity);
 void *vec_deinit(void *data);
 
 // Returns a new pointer if its being reallocated
@@ -307,35 +351,12 @@ static inline size_t vec_capacity(const void *data) {
 typedef uint64_t (hset_hash_fn)(const void *data);
 typedef bool (hset_eq_fn)(const void *a, const void *b);
 
-#define HSET_ENTRY_PSL_BITS 15
-#define HSET_ENTRY_HASH_BITS 48
-
-typedef struct hset_entry_t {
-	uint64_t used	: 1;
-	uint64_t psl	: HSET_ENTRY_PSL_BITS;
-	uint64_t hash	: HSET_ENTRY_HASH_BITS;
-	uint64_t data[];
-} hset_entry_t;
-
-typedef struct hset {
-	// Size of key value pair
-	uint32_t kvsize, entsize;
-
-	// Number of entries and capacity
-	uint32_t nents, capacity;
-
-	hset_hash_fn *hash;
-
-	hset_eq_fn *eq;
-
-	hset_entry_t kv[];
-} hset_t;
-
 // xxhash64 single lange implementation
 uint64_t xxhash64_single_lane(const uint8_t *data, size_t len);
 
 // Returns the array of keyvalue pairs
-void *hset_init(uint32_t capacity, uint32_t kvsize,
+void *hset_init(mem_alloc_t alloc,
+		uint32_t capacity, uint32_t kvsize,
 		hset_hash_fn *hash, hset_eq_fn *eq);
 
 // Frees the hashset
@@ -365,6 +386,17 @@ bool str_eq(const char *a, const char *b);
 #if EK_USE_STRVIEW
 uint64_t strview_hash(const strview_t *sv);
 #endif
+
+#endif
+
+//
+// EK_USE_ARENA
+//
+#if EK_USE_ARENA
+
+bool fixed_arena_init(void *buf, size_t bufsize);
+void *fixed_arena_alloc(void *buf, size_t size);
+mem_alloc_t fixed_arena_alloc_fn(void *buf);
 
 #endif
 

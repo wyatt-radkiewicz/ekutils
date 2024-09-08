@@ -55,7 +55,7 @@ bool test_xxhash64_single_lane(void) {
 }
 
 bool test_hset1(void) {
-	test_person_t *map = hset_init(4, sizeof(*map),
+	test_person_t *map = hset_init(mem_stdlib_alloc(), 4, sizeof(*map),
 					(hset_hash_fn *)strview_hash,
 					(hset_eq_fn *)strview_eq);
 	if (!map) return TEST_BAD;

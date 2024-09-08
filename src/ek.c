@@ -4,6 +4,45 @@
 #	include <stdlib.h>
 #endif
 
+#if EK_USE_STDLIB_MALLOC
+
+#ifndef NDEBUG
+static size_t mem_stdlib_bytes;
+#endif
+
+static void *mem_realloc_default(void *usr, void *blk, size_t newsize) {
+#ifndef NDEBUG
+	size_t *mem = (size_t *)blk - 1;
+	if (!blk) {
+		mem_stdlib_bytes += newsize;
+		mem = malloc(newsize + sizeof(size_t));
+		*mem = newsize;
+		return mem + 1;
+	} else if (!newsize) {
+		mem_stdlib_bytes -= *mem;
+		free(mem);
+		return NULL;
+	} else {
+		mem_stdlib_bytes -= *mem;
+		mem = realloc(mem, newsize + sizeof(size_t));
+		if (!mem) return NULL;
+		mem_stdlib_bytes += newsize;
+		*mem = newsize;
+		return mem + 1;
+	}
+#else
+	return realloc(blk, newsize);
+#endif
+}
+mem_alloc_t mem_stdlib_alloc(void) {
+	static mem_alloc_fn *const fn = mem_realloc_default;
+	return &fn;
+}
+size_t mem_stdlib_allocated_bytes(void) {
+	return mem_stdlib_bytes;
+}
+#endif
+
 //
 // EK_USE_STRVIEW
 //
@@ -54,22 +93,24 @@ LOGFN(_logerr, LOG_ERR)
 #define vec_size(elems, capacity) (sizeof(vec_t) * (capacity) * (elems))
 #define vec_from_data(data) ((vec_t *)((uintptr_t)data - offsetof(vec_t, data)))
 
-void *vec_init(size_t elem_size, size_t capacity) {
-	vec_t *vec = EK_MALLOC(vec_size(capacity, elem_size));
+void *vec_init(mem_alloc_t alloc, size_t elem_size, size_t capacity) {
+	vec_t *vec = mem_alloc(alloc, NULL, vec_size(capacity, elem_size));
+	vec->alloc = alloc;
 	vec->len = 0;
 	vec->capacity = capacity;
 	vec->elem_size = elem_size;
 	return vec->data;
 }
 void *vec_deinit(void *data) {
-	EK_FREE(vec_from_data(data));
-	return NULL;
+	vec_t *vec = vec_from_data(data);
+	return mem_alloc(vec->alloc, vec, 0);
 }
 void *vec_push(void *data, size_t nelems, const void *elems) {
 	vec_t *vec = vec_from_data(data);
 	if (vec->len + nelems > vec->capacity) {
 		vec->capacity *= 2;
-		vec = EK_REALLOC(vec, vec_size(vec->elem_size, vec->capacity));
+		vec = mem_alloc(vec->alloc, vec, vec_size(vec->elem_size, vec->capacity));
+		if (!vec) return NULL;
 	}
 
 	memcpy(vec->data + vec->len * vec->elem_size, elems, nelems * vec->elem_size);
@@ -192,15 +233,43 @@ uint64_t xxhash64_single_lane(const uint8_t *data, size_t len) {
 	return acc;
 }
 
+#define HSET_ENTRY_PSL_BITS 15
+#define HSET_ENTRY_HASH_BITS 48
+
+typedef struct hset_entry_t {
+	uint64_t used	: 1;
+	uint64_t psl	: HSET_ENTRY_PSL_BITS;
+	uint64_t hash	: HSET_ENTRY_HASH_BITS;
+	uint64_t data[];
+} hset_entry_t;
+
+typedef struct hset {
+	mem_alloc_t alloc;
+
+	// Size of key value pair
+	uint32_t kvsize, entsize;
+
+	// Number of entries and capacity
+	uint32_t nents, capacity;
+
+	hset_hash_fn *hash;
+
+	hset_eq_fn *eq;
+
+	hset_entry_t kv[];
+} hset_t;
+
 #define hset_from_data(_data) (hset_t *)((uintptr_t)_data \
 				- offsetof(hset_entry_t, data) \
 				- offsetof(hset_t, kv))
 
-void *hset_init(uint32_t capacity, uint32_t kvsize,
+void *hset_init(mem_alloc_t alloc,
+		uint32_t capacity, uint32_t kvsize,
 		hset_hash_fn *hash, hset_eq_fn *eq) {
 	const size_t entsize = align_up(kvsize + sizeof(hset_entry_t),
 				sizeof(hset_entry_t));
-	hset_t *set = EK_MALLOC(sizeof(hset_t) + entsize * (capacity + 1));
+	hset_t *set = mem_alloc(alloc, NULL, sizeof(hset_t) + entsize * (capacity + 1));
+	set->alloc = alloc;
 
 	set->nents = 0;
 	set->capacity = capacity;
@@ -219,11 +288,13 @@ void *hset_init(uint32_t capacity, uint32_t kvsize,
 	return set->kv->data;
 }
 void *hset_deinit(void *_set) {
-	EK_FREE(hset_from_data(_set));
-	return NULL;
+	hset_t *set = hset_from_data(_set);
+	return mem_alloc(set->alloc, set, 0);
 }
 hset_t *hset_grow(hset_t *set) {
-	void *newset = hset_init(set->capacity * 2, set->kvsize, set->hash, set->eq);
+	void *newset = hset_init(set->alloc, set->capacity * 2, set->kvsize,
+				set->hash, set->eq);
+	if (!newset) return NULL;
 	
 	for (void *iter = hset_next(set->kv->data, NULL); iter;
 		iter = hset_next(set->kv->data, iter)) {
@@ -329,6 +400,36 @@ uint64_t strview_hash(const strview_t *sv) {
 	return xxhash64_single_lane((const uint8_t *)sv->str, sv->len);
 }
 #endif
+
+#endif
+
+#if EK_USE_ARENA
+
+typedef struct fixed_arena {
+	mem_alloc_fn *alloc_fn;
+	uint8_t *ptr;
+	uint8_t data[];
+} fixed_arena_t;
+
+static void *fixed_arena_realloc(void *buf, void *blk, size_t newsize) {
+	if (!blk) return fixed_arena_alloc(buf, newsize);
+	else return NULL;
+}
+bool fixed_arena_init(void *buf, size_t bufsize) {
+	fixed_arena_t *arena = buf;
+	if (bufsize < sizeof(*arena)) return false;
+	arena->alloc_fn = fixed_arena_realloc;
+	arena->ptr = arena->data + bufsize - sizeof(*arena);
+	return true;
+}
+void *fixed_arena_alloc(void *buf, size_t size) {
+	fixed_arena_t *arena = buf;
+	arena->ptr = (uint8_t *)align_dn((uintptr_t)arena->ptr - size, 8);
+	return arena->ptr >= arena->data ? arena->ptr : NULL;
+}
+mem_alloc_t fixed_arena_alloc_fn(void *buf) {
+	return &((fixed_arena_t *)buf)->alloc_fn;
+}
 
 #endif
 

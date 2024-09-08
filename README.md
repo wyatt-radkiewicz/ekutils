@@ -24,14 +24,13 @@ To test the utility library
 ## What features will be in ekutils?
 - [x] string views
 - [ ] dynamic string buffers
-- [ ] generic allocation interface
+- [x] generic allocation interface
 - [ ] pool allocater
-- [ ] arena allocater
-- [ ] better format strings
+- [x] arena allocater
 - [x] deadass simple logging library
 - [x] vectors
 - [x] robin-hood hash maps
-- [ ] string hash function
+- [x] string hash function
 - [ ] toml parser
 - [ ] json parser
 - [x] simple testing framework
