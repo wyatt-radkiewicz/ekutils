@@ -40,6 +40,18 @@
 #ifndef EK_USE_STRBUF
 #	define EK_USE_STRBUF EK_FEATURE_OFF
 #endif
+#ifndef EK_USE_TOML
+#	define EK_USE_TOML EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_JSON
+#	define EK_USE_JSON EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_PACKET
+#	define EK_USE_PACKET EK_FEATURE_OFF
+#endif
+#ifndef EK_USE_RFC3339
+#	define EK_USE_RFC3339 EK_FEATURE_OFF
+#endif
 
 //
 // standard library includes
@@ -56,6 +68,9 @@
 #endif
 #if EK_USE_TEST
 #	include <stdio.h>
+#endif
+#if EK_USE_TOML
+#	include <time.h>
 #endif
 #if EK_USE_STRVIEW || EK_USE_HASH
 #	include <stdbool.h>
@@ -89,6 +104,8 @@ size_t mem_stdlib_allocated_bytes(void);
 // EK_USE_UTIL
 //
 #if EK_USE_UTIL
+#	define str(s) #s
+#	define xstr(xs) str(xs)
 #	define arrlen(a) (sizeof(a) / sizeof((a)[0]))
 #	define max(a, b) ({ \
 		const typeof(a) _a = a; \
@@ -142,6 +159,17 @@ size_t mem_stdlib_allocated_bytes(void);
 		const typeof(x) _x = x; \
 		const typeof(r) _r = r; \
 		(_x >> _r) | (_x << (sizeof(_x) * 8 - _r)); \
+	})
+#	define absmod(x, r) ({ \
+		const typeof(x) _x = x; \
+		const typeof(r) _r = r; \
+		typeof(x) _out; \
+		if (x < 0) { \
+			_out = (x - align_dn(x, r)) % 4; \
+		} else { \
+			_out = x % 4; \
+		} \
+		_out; \
 	})
 
 #endif
@@ -247,6 +275,11 @@ static void utf8_codepoint_encode(const uint32_t c, uint8_t *buf) {
 		break;
 	}
 }
+static uint32_t strview_next_utf8(strview_t *str) {
+	const uint32_t c = utf8_codepoint_decode((const uint8_t *)str->str);
+	str->str += utf8_codepoint_len(*str->str), str->len--;
+	return c;
+}
 #endif
 
 //
@@ -254,55 +287,24 @@ static void utf8_codepoint_encode(const uint32_t c, uint8_t *buf) {
 //
 #if EK_USE_LOG
 typedef enum log_lvl {
-	LOG_DBG,
-	LOG_INFO,
-	LOG_WARN,
 	LOG_ERR,
+	LOG_WARN,
+	LOG_INFO,
+	LOG_DBG,
 } log_lvl_t;
 
-typedef void (log_fn)(log_lvl_t l, const char *msg, va_list args);
+typedef void (log_fn)(log_lvl_t l, const char *msg, ...);
 
-void logcb(log_fn *cb);
-#define logdbg(msg) \
-	_logdbg("%s in %s: " msg, \
+extern log_fn *global_log;
+#define log(lvl, msg) \
+	if (log_global) log_global(lvl, "%s in %s: " msg, \
 		__func__, \
 		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define loginfo(msg) \
-	_loginfo("%s in %s: " msg, \
-		__func__, \
-		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define logwarn(msg) \
-	_logwarn("%s in %s: " msg, \
-		__func__, \
-		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define logerr(msg) \
-	_logerr("%s in %s: " msg, \
-		__func__, \
-		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define logdbgf(msg, ...) \
-	_logdbg("%s in %s: " msg, \
+#define logf(lvl, msg, ...) \
+	if (log_global) log_global(lvl, "%s in %s: " msg, \
 		__func__, \
 		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__, \
 		__VA_ARGS__)
-#define loginfof(msg, ...) \
-	_loginfo("%s in %s: " msg, \
-		__func__, \
-		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__, \
-		__VA_ARGS__)
-#define logwarnf(msg, ...) \
-	_logwarn("%s in %s: " msg, \
-		__func__, \
-		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__, \
-		__VA_ARGS__)
-#define logerrf(msg, ...) \
-	_logerr("%s in %s: " msg, \
-		__func__, \
-		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__, \
-		__VA_ARGS__)
-void _logdbg(const char *msg, ...);
-void _loginfo(const char *msg, ...);
-void _logwarn(const char *msg, ...);
-void _logerr(const char *msg, ...);
 #endif
 
 //
@@ -313,7 +315,6 @@ typedef struct vec {
 	mem_alloc_t alloc;
 	size_t len;
 	size_t capacity;
-	size_t elem_size;
 	uint8_t data[];
 } vec_t;
 
@@ -322,8 +323,10 @@ void *vec_init(mem_alloc_t alloc, size_t elem_size, size_t capacity);
 void *vec_deinit(void *data);
 
 // Returns a new pointer if its being reallocated
-void *vec_push(void *data, size_t nelems, const void *elems);
-void vec_pop(void *data, size_t nelems, void *elems);
+#define vec_push(vec, nelems, elems) _vec_push(vec, sizeof(*(vec)), nelems, elems)
+void *_vec_push(void *data, size_t elem_size, size_t nelems, const void *elems);
+#define vec_pop(vec, nelems, elems) _vec_pop(vec, sizeof(*(vec)), nelems, elems)
+void _vec_pop(void *data, size_t elem_size, size_t nelems, void *elems);
 
 #define vec_from_data(data) ((vec_t *)((uintptr_t)data - offsetof(vec_t, data)))
 static inline size_t *vec_len(const void *data) {
@@ -343,29 +346,67 @@ static inline size_t vec_capacity(const void *data) {
 #	error ek.h: to use string buffers, enable vector library
 #endif
 
-char *strbuf_init(mem_alloc_t fn, size_t initial_capacity) {
-	char *s = vec_init(fn, 1, initial_capacity);
+typedef char *strbuf_t;
+
+strbuf_t strbuf_cpy(strbuf_t sb, const strview_t *sv);
+strbuf_t strbuf_init(mem_alloc_t fn, size_t initial_capacity) {
+	strbuf_t s = vec_init(fn, 1, initial_capacity);
 	if (!s) return NULL;
 	vec_push(s, 1, &(char){ '\0' });
 	return s;
 }
-char *strbuf_cpy(char *sb, const strview_t *sv) {
+strbuf_t strbuf_from_sv(mem_alloc_t fn, const strview_t *sv) {
+	strbuf_t sb = vec_init(fn, 1, sv->len + 1);
+	if (!sb) return NULL;
+	return strbuf_cpy(sb, sv);
+}
+strbuf_t strbuf_cpy(strbuf_t sb, const strview_t *sv) {
 	*vec_len(sb) = 0;
 	if (!(sb = vec_push(sb, sv->len, sv->str))) return NULL;
 	return vec_push(sb, 1, &(char){ '\0' });
 }
-char *strbuf_from_sv(mem_alloc_t fn, const strview_t *sv) {
-	char *sb = vec_init(fn, 1, sv->len + 1);
-	if (!sb) return NULL;
-	return strbuf_cpy(sb, sv);
-}
-char *strbuf_svcat(char *sb, const strview_t *sv) {
+strbuf_t strbuf_svcat(strbuf_t sb, const strview_t *sv) {
 	vec_pop(sb, 1, NULL);
 	if (!(sb = vec_push(sb, sv->len, NULL))) return NULL;
 	return vec_push(sb, 1, &(char){ '\0' });
 }
 static inline strview_t strbuf_to_strview(char *sb) {
 	return (strview_t){ .str = sb, .len = *vec_len(sb) };
+}
+
+// Copy-on-write (COW) strings
+typedef struct cowstr {
+	// NULL when the string is owned, non-NULL (pointer to desired allocator)
+	// when is it not owned
+	mem_alloc_t alloc;
+	union {
+		strview_t view;
+		strbuf_t buf;
+	};
+} cowstr_t;
+
+static cowstr_t cowstr_init(mem_alloc_t alloc, const strview_t *str) {
+	return (cowstr_t){
+		.alloc = alloc,
+		.view = *str,
+	};
+}
+static strview_t cowstr_get_str(const cowstr_t *cow) {
+	if (cow->alloc) return cow->view;
+	else return (strview_t){ .str = cow->buf, .len = *vec_len(cow->buf) };
+}
+static void cowstr_make_owned(cowstr_t *cow) {
+	const strview_t view = cow->view;
+	cow->buf = strbuf_from_sv(cow->alloc, &view);
+	cow->alloc = NULL;
+}
+static void cowstr_cpy(cowstr_t *cow, const strview_t *str) {
+	if (cow->alloc) cowstr_make_owned(cow);
+	cow->buf = strbuf_cpy(cow->buf, str);
+}
+static void cowstr_cat(cowstr_t *cow, const strview_t *str) {
+	if (cow->alloc) cowstr_make_owned(cow);
+	cow->buf = strbuf_svcat(cow->buf, str);
 }
 
 #endif
@@ -480,6 +521,127 @@ typedef struct test_s {
 // Returns true if all tests passed
 bool tests_run_foreach(bool (*setup_test)(const test_t *test),
 		const test_t *test_list, size_t list_len, FILE *out);
+
+#endif
+
+//
+// EK_USE_PACKET
+//
+#if EK_USE_PACKET
+
+uint32_t packet_htonf(float val);
+float packet_ntohf(uint32_t val);
+
+int packet_bytecount(int head);
+void packet_write_bit(uint8_t *buf, int *head, int value);
+int packet_read_bit(const uint8_t *buf, int *head);
+void packet_write_bits(uint8_t *buf, int *head, uint64_t value, int numbits);
+uint64_t packet_read_bits(const uint8_t *buf, int *head, int numbits);
+void packet_write_u8(uint8_t *buf, int *head, uint8_t value);
+void packet_write_u16(uint8_t *buf, int *head, uint16_t value);
+void packet_write_u32(uint8_t *buf, int *head, uint32_t value);
+void packet_write_s16(uint8_t *buf, int *head, int16_t value);
+void packet_write_s32(uint8_t *buf, int *head, int32_t value);
+void packet_write_float(uint8_t *buf, int *head, float value);
+uint8_t packet_read_u8(const uint8_t *buf, int *head);
+uint16_t packet_read_u16(const uint8_t *buf, int *head);
+uint32_t packet_read_u32(const uint8_t *buf, int *head);
+int16_t packet_read_s16(const uint8_t *buf, int *head);
+int32_t packet_read_s32(const uint8_t *buf, int *head);
+float packet_read_float(const uint8_t *buf, int *head);
+
+#endif
+
+//
+// EK_USE_RFC3339
+//
+#if EK_USE_RFC3339
+
+typedef struct rfc3339_local {
+	bool has_date;
+	bool has_time;
+
+	struct {
+		int y, m, d;
+	} date;
+	struct {
+		int h, m, s;
+
+		long nano;
+	} time;
+} rfc3339_local_t;
+
+typedef struct rfc3339 {
+	bool islocal;
+
+	union {
+		rfc3339_local_t local;
+		struct timespec unix;
+	};
+} rfc3339_t;
+
+bool rfc3339_parse(strview_t *str, rfc3339_t *out);
+
+#endif
+
+//
+// EK_USE_TOML
+//
+#if EK_USE_TOML
+#if !EK_USE_HASH
+#	error ek.h: to use toml features you must include the hash feature
+#endif
+#if !EK_USE_STRBUF
+#	error ek.h: to use toml features you must include the strbuf feature
+#endif
+
+typedef enum toml_type {
+	TOML_STR,
+	TOML_INT,
+	TOML_FLOAT,
+	TOML_BOOL,
+	TOML_TIME,
+	TOML_ARR,
+	TOML_TABLE,
+} toml_type_t;
+
+typedef struct toml {
+	// Only used in for key/value pairs
+	strbuf_t key;
+	int line;
+
+	// Value part
+	toml_type_t type;
+	union {
+		strbuf_t strbuf;
+		int64_t i;
+		double f;
+		bool b;
+		rfc3339_t time;
+		struct toml *array;
+		struct toml *htable;
+	};
+} toml_t;
+
+typedef struct toml_args {
+	mem_alloc_t alloc;
+
+	log_fn *errs;
+
+	int line;
+
+	strview_t src;
+} toml_args_t;
+
+toml_t *toml_parse(toml_args_t *args);
+void toml_deinit(mem_alloc_t alloc, toml_t *kv);
+
+#endif
+
+//
+// EK_USE_JSON
+//
+#if EK_USE_JSON
 
 #endif
 
