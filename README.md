@@ -31,8 +31,6 @@ To test the utility library
 - [x] vectors
 - [x] robin-hood hash maps
 - [x] string hash function
-- [ ] toml parser
-- [ ] json parser
 - [x] simple testing framework
 
 ## License

@@ -40,18 +40,9 @@
 #ifndef EK_USE_STRBUF
 #	define EK_USE_STRBUF EK_FEATURE_OFF
 #endif
-//#ifndef EK_USE_TOML
-//#	define EK_USE_TOML EK_FEATURE_OFF
-//#endif
-//#ifndef EK_USE_JSON
-//#	define EK_USE_JSON EK_FEATURE_OFF
-//#endif
 #ifndef EK_USE_PACKET
 #	define EK_USE_PACKET EK_FEATURE_OFF
 #endif
-//#ifndef EK_USE_RFC3339
-//#	define EK_USE_RFC3339 EK_FEATURE_OFF
-//#endif
 
 //
 // standard library includes
@@ -68,9 +59,6 @@
 #endif
 #if EK_USE_TEST
 #	include <stdio.h>
-#endif
-#if EK_USE_TOML
-#	include <time.h>
 #endif
 #if EK_USE_STRVIEW || EK_USE_HASH
 #	include <stdbool.h>
@@ -549,99 +537,6 @@ uint32_t packet_read_u32(const uint8_t *buf, int *head);
 int16_t packet_read_s16(const uint8_t *buf, int *head);
 int32_t packet_read_s32(const uint8_t *buf, int *head);
 float packet_read_float(const uint8_t *buf, int *head);
-
-#endif
-
-//
-// EK_USE_RFC3339
-//
-#if EK_USE_RFC3339
-
-typedef struct rfc3339_local {
-	bool has_date;
-	bool has_time;
-
-	struct {
-		int y, m, d;
-	} date;
-	struct {
-		int h, m, s;
-
-		long nano;
-	} time;
-} rfc3339_local_t;
-
-typedef struct rfc3339 {
-	bool islocal;
-
-	union {
-		rfc3339_local_t local;
-		struct timespec unix;
-	};
-} rfc3339_t;
-
-bool rfc3339_parse(strview_t *str, rfc3339_t *out);
-
-#endif
-
-//
-// EK_USE_TOML
-//
-#if EK_USE_TOML
-#if !EK_USE_HASH
-#	error ek.h: to use toml features you must include the hash feature
-#endif
-#if !EK_USE_STRBUF
-#	error ek.h: to use toml features you must include the strbuf feature
-#endif
-
-typedef enum toml_type {
-	TOML_STR,
-	TOML_INT,
-	TOML_FLOAT,
-	TOML_BOOL,
-	TOML_TIME,
-	TOML_ARR,
-	TOML_TABLE,
-} toml_type_t;
-
-typedef struct toml {
-	// Only used in for key/value pairs
-	strbuf_t key;
-	int line;
-
-	// Value part
-	toml_type_t type;
-	union {
-		strbuf_t strbuf;
-		int64_t i;
-		double f;
-		bool b;
-		rfc3339_t time;
-		struct toml *array;
-		struct toml *htable;
-	};
-} toml_t;
-
-typedef struct toml_args {
-	mem_alloc_t alloc;
-
-	log_fn *errs;
-
-	int line;
-
-	strview_t src;
-} toml_args_t;
-
-toml_t *toml_parse(toml_args_t *args);
-void toml_deinit(mem_alloc_t alloc, toml_t *kv);
-
-#endif
-
-//
-// EK_USE_JSON
-//
-#if EK_USE_JSON
 
 #endif
 
