@@ -60,7 +60,7 @@
 #if EK_USE_TEST
 #	include <stdio.h>
 #endif
-#if EK_USE_STRVIEW || EK_USE_HASH
+#if EK_USE_STRVIEW || EK_USE_HASH || EK_USE_TEST
 #	include <stdbool.h>
 #endif
 
