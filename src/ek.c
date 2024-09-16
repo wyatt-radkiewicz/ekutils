@@ -1,6 +1,6 @@
 #include "ek.h"
 
-#if EK_USE_VEC
+#if EK_USE_VEC || EK_USE_STDLIB_MALLOC
 #	include <stdlib.h>
 #endif
 #if EK_USE_PACKET
