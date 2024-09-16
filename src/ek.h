@@ -40,18 +40,18 @@
 #ifndef EK_USE_STRBUF
 #	define EK_USE_STRBUF EK_FEATURE_OFF
 #endif
-#ifndef EK_USE_TOML
-#	define EK_USE_TOML EK_FEATURE_OFF
-#endif
-#ifndef EK_USE_JSON
-#	define EK_USE_JSON EK_FEATURE_OFF
-#endif
+//#ifndef EK_USE_TOML
+//#	define EK_USE_TOML EK_FEATURE_OFF
+//#endif
+//#ifndef EK_USE_JSON
+//#	define EK_USE_JSON EK_FEATURE_OFF
+//#endif
 #ifndef EK_USE_PACKET
 #	define EK_USE_PACKET EK_FEATURE_OFF
 #endif
-#ifndef EK_USE_RFC3339
-#	define EK_USE_RFC3339 EK_FEATURE_OFF
-#endif
+//#ifndef EK_USE_RFC3339
+//#	define EK_USE_RFC3339 EK_FEATURE_OFF
+//#endif
 
 //
 // standard library includes
@@ -79,7 +79,7 @@
 // Allocation interface
 typedef void *(mem_alloc_fn)(void *usr, void *blk, size_t size);
 typedef mem_alloc_fn *const *mem_alloc_t;
-void *mem_alloc(mem_alloc_t fn, void *blk, size_t size) {
+static void *mem_alloc(mem_alloc_t fn, void *blk, size_t size) {
 	if (!fn) return NULL;
 	return (*fn)((void *)fn, blk, size);
 }
@@ -296,11 +296,11 @@ typedef enum log_lvl {
 typedef void (log_fn)(log_lvl_t l, const char *msg, ...);
 
 extern log_fn *global_log;
-#define log(lvl, msg) \
+#define logmsg(lvl, msg) \
 	if (log_global) log_global(lvl, "%s in %s: " msg, \
 		__func__, \
 		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__)
-#define logf(lvl, msg, ...) \
+#define logfmt(lvl, msg, ...) \
 	if (log_global) log_global(lvl, "%s in %s: " msg, \
 		__func__, \
 		strrchr(__FILE__, '/') + 1 ? strrchr(__FILE__, '/') + 1 : __FILE__, \
@@ -348,24 +348,24 @@ static inline size_t vec_capacity(const void *data) {
 
 typedef char *strbuf_t;
 
-strbuf_t strbuf_cpy(strbuf_t sb, const strview_t *sv);
-strbuf_t strbuf_init(mem_alloc_t fn, size_t initial_capacity) {
+static strbuf_t strbuf_cpy(strbuf_t sb, const strview_t *sv);
+static strbuf_t strbuf_init(mem_alloc_t fn, size_t initial_capacity) {
 	strbuf_t s = vec_init(fn, 1, initial_capacity);
 	if (!s) return NULL;
 	vec_push(s, 1, &(char){ '\0' });
 	return s;
 }
-strbuf_t strbuf_from_sv(mem_alloc_t fn, const strview_t *sv) {
+static strbuf_t strbuf_from_sv(mem_alloc_t fn, const strview_t *sv) {
 	strbuf_t sb = vec_init(fn, 1, sv->len + 1);
 	if (!sb) return NULL;
 	return strbuf_cpy(sb, sv);
 }
-strbuf_t strbuf_cpy(strbuf_t sb, const strview_t *sv) {
+static strbuf_t strbuf_cpy(strbuf_t sb, const strview_t *sv) {
 	*vec_len(sb) = 0;
 	if (!(sb = vec_push(sb, sv->len, sv->str))) return NULL;
 	return vec_push(sb, 1, &(char){ '\0' });
 }
-strbuf_t strbuf_svcat(strbuf_t sb, const strview_t *sv) {
+static strbuf_t strbuf_svcat(strbuf_t sb, const strview_t *sv) {
 	vec_pop(sb, 1, NULL);
 	if (!(sb = vec_push(sb, sv->len, NULL))) return NULL;
 	return vec_push(sb, 1, &(char){ '\0' });
