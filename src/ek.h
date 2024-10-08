@@ -494,7 +494,7 @@ bool fixedpool_empty(const void *buf);
 bool test_bad(const char *file, int line);
 #define TEST_BAD (test_bad(__FILE__, __LINE__))
 
-typedef bool (test_fn)(void);
+typedef bool (test_fn)(unsigned testid);
 typedef struct test_s {
     test_fn *pfn;
     const char *name;

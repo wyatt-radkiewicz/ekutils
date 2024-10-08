@@ -150,7 +150,7 @@ bool tests_run_foreach(bool (*setup_test)(const test_t *test),
 			fprintf(out, COLOR("41;1") "<SETUP FAIL>" COLOR("0") "\n");
 			continue;
 		}
-        	if (test_list[i].pfn() && !test_was_bad) {
+        	if (test_list[i].pfn(i) && !test_was_bad) {
 			fprintf(out, " " COLOR("42;1") "PASS" COLOR("0") "\n");
 			passed++;
         	} else {

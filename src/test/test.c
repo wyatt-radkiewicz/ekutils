@@ -3,12 +3,12 @@
 #include "../ek.h"
 
 // EK_USE_TEST
-bool test_test1(void) {
+bool test_test1(unsigned testid) {
 	return true;
 }
 
 // EK_USE_STRVIEW
-bool test_strview1(void) {
+bool test_strview1(unsigned testid) {
 	strview_t a = make_strview("hello");
 	strview_t b = make_strview("hello");
 
@@ -16,7 +16,7 @@ bool test_strview1(void) {
 
 	return true;
 }
-bool test_strview2(void) {
+bool test_strview2(unsigned testid) {
 	strview_t a = make_strview("hello");
 	strview_t b = make_strview("world");
 
@@ -24,7 +24,7 @@ bool test_strview2(void) {
 
 	return true;
 }
-bool test_strview3(void) {
+bool test_strview3(unsigned testid) {
 	char s[64];
 	strview_t v = make_strview("hello world!");
 
@@ -33,7 +33,7 @@ bool test_strview3(void) {
 	
 	return true;
 }
-bool test_strview4(void) {
+bool test_strview4(unsigned testid) {
 	char s[5];
 	strview_t v = make_strview("world!");
 
@@ -48,13 +48,13 @@ typedef struct test_person {
 	int age;
 } test_person_t;
 
-bool test_xxhash64_single_lane(void) {
+bool test_xxhash64_single_lane(unsigned testid) {
 	if (xxhash64_single_lane((const uint8_t *)"hello", 5) !=
 		xxhash64_single_lane((const uint8_t *)"hello world!", 5)) return TEST_BAD;
 	return true;
 }
 
-bool test_hset1(void) {
+bool test_hset1(unsigned testid) {
 	test_person_t *map = hset_init(mem_stdlib_alloc(), 4, sizeof(*map),
 					(hset_hash_fn *)strview_hash,
 					(hset_eq_fn *)strview_eq);
