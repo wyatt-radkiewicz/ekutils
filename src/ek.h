@@ -311,7 +311,7 @@ void *vec_init(mem_alloc_t alloc, size_t elem_size, size_t capacity);
 void *vec_deinit(void *data);
 
 // Returns a new pointer if its being reallocated
-#define vec_push(vec, nelems, elems) _vec_push(vec, sizeof(*(vec)), nelems, elems)
+#define vec_push(vec, nelems, ...) _vec_push(vec, sizeof(*(vec)), nelems, __VA_ARGS__)
 void *_vec_push(void *data, size_t elem_size, size_t nelems, const void *elems);
 #define vec_pop(vec, nelems, elems) _vec_pop(vec, sizeof(*(vec)), nelems, elems)
 void _vec_pop(void *data, size_t elem_size, size_t nelems, void *elems);
