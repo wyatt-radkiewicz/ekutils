@@ -17,7 +17,7 @@ ekutils.
 ### How to test:
 Just run
 ```
-make utils && ./build/test
+make && ./build/test
 ```
 To test the utility library
 
