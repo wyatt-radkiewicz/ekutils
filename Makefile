@@ -14,7 +14,7 @@ LDFLAGS	:=$(LDFLAGS) -lm
 
 # Build the main executable
 $(OUT): $(OBJS)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 # Remember that when this call is evaluated, it is expanded TWICE!
 define COMPILE
